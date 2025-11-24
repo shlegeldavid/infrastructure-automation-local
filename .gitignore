@@ -1,9 +1,11 @@
 # Terraform
+*.tfstate.*
 *.tfstate
 *.tfstate.backup
 *.tfvars
 .terraform.lock.hcl
 .terraform/
+!terraform.tfvars.example
 
 # Ansible
 inventory.ini

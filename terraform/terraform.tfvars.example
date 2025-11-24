@@ -1,0 +1,3 @@
+#This is an example of how tfvars file should be configured
+timeweb_token   = "your-token-here"
+ssh_public_key  = "ssh-rsa AAAAB3... your-public-key-here"
