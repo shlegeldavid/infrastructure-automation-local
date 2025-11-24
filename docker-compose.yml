@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Standalone Selenium Chrome с VNC для первого логина
+  selenium-chrome:
+    image: selenium/standalone-chrome:latest
+    container_name: selenium-chrome
+    shm_size: '2gb'
+    ports:
+      - "4444:4444"   # Selenium WebDriver API
+      - "7900:7900"   # noVNC веб-интерфейс (пароль: secret)
+    environment:
+      - SE_NODE_MAX_SESSIONS=3
+      - SE_NODE_OVERRIDE_MAX_SESSIONS=true
+      - SE_VNC_NO_PASSWORD=1
+    volumes:
+      - chrome-profile-data:/opt/selenium/profile  # Сохранение профиля браузера
+
+  # Python парсер DataLens
+  datalens-bot:
+    build: ./apps/parser-python
+    container_name: datalens-bot
+    restart: unless-stopped
+    depends_on:
+      - selenium-chrome
+    environment:
+      - TG_BOT_TOKEN  # Берётся из окружения (или .env если есть)
+      - TG_CHAT_ID
+      - SELENIUM_HOST=http://selenium-chrome:4444/wd/hub
+      - FIRST_RUN=false  # По умолчанию false
+    volumes:
+      - ./data:/app/data  # Скриншоты будут сохраняться сюда
+      - chrome-profile-data:/opt/selenium/profile  # Общий профиль с selenium-chrome
+
+  # C# парсер (заглушка, настроим позже)
+  parser-csharp:
+    build: ./apps/parser-csharp
+    container_name: parser-csharp
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  chrome-profile-data:  # Том для сохранения логина между перезапусками
