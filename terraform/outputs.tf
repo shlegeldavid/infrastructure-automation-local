@@ -5,4 +5,5 @@ output "server_ip" {
 
 output "server_id" {
     value = twc_server.app_server.id
+    description = "Server ID"
 }

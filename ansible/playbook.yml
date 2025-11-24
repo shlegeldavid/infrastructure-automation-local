@@ -13,7 +13,7 @@
     - name: Update apt cache and upgrade packages
       apt:
         pkg:
-          - ca-cetrificates
+          - ca-certificates
           - curl
           - gnupg
           - lsb-release
