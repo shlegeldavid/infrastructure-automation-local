@@ -7,14 +7,20 @@ services:
     container_name: selenium-chrome
     shm_size: '2gb'
     ports:
-      - "4444:4444"   # Selenium WebDriver API
-      - "7900:7900"   # noVNC веб-интерфейс (пароль: secret)
+      - "127.0.0.1:4444:4444"   # Только localhost - Selenium WebDriver API
+      - "127.0.0.1:7900:7900"   # Только localhost - noVNC веб-интерфейс
     environment:
       - SE_NODE_MAX_SESSIONS=3
       - SE_NODE_OVERRIDE_MAX_SESSIONS=true
       - SE_VNC_NO_PASSWORD=1
     volumes:
-      - chrome-profile-data:/opt/selenium/profile  # Сохранение профиля браузера
+      - chrome-profile-data:/opt/selenium/profile
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4444/wd/hub/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
 
   # Nginx - reverse proxy с SSL
   nginx:
@@ -28,8 +34,13 @@ services:
       - ./monitoring/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./monitoring/ssl:/etc/nginx/ssl:ro
     depends_on:
-      - grafana
-      - prometheus
+      grafana:
+        condition: service_healthy
+      prometheus:
+        condition: service_started
+    networks:
+      - default
+      - monitoring
 
   # Python парсер DataLens
   datalens-bot:
@@ -37,7 +48,8 @@ services:
     container_name: datalens-bot
     restart: unless-stopped
     depends_on:
-      - selenium-chrome
+      selenium-chrome:
+        condition: service_healthy
     environment:
       - TG_BOT_TOKEN
       - TG_CHAT_ID
@@ -46,6 +58,13 @@ services:
     volumes:
       - ./data:/app/data
       - chrome-profile-data:/opt/selenium/profile
+    # Ограничения ресурсов
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
   provider-downs:
     image: ghcr.io/shlegeldavid/provider-downs:latest
@@ -55,19 +74,24 @@ services:
     volumes:
       - ./data:/app/data
       - ./apps/provider-downs/provider-falls-ea0c76990c0c.json:/app/provider-falls-ea0c76990c0c.json:ro
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
-    # === МОНИТОРИНГ ===
+  # === МОНИТОРИНГ ===
   
-  # cAdvisor - метрики контейнеров
+  # cAdvisor - метрики контейнеров (только внутренняя сеть!)
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor
     restart: unless-stopped
     privileged: true
+    # Убираем внешний порт - доступ только через nginx
     expose:
       - "8080"
-    networks:
-      - monitoring
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -76,14 +100,17 @@ services:
       - /dev/disk/:/dev/disk:ro
     devices:
       - /dev/kmsg
+    networks:
+      - monitoring
 
-  # Node Exporter - метрики системы
+  # Node Exporter - метрики системы (только внутренняя сеть!)
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
     restart: unless-stopped
-    ports:
-      - "9100:9100"
+    # Убираем внешний порт
+    expose:
+      - "9100"
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -92,40 +119,65 @@ services:
       - '--path.procfs=/host/proc'
       - '--path.sysfs=/host/sys'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+    networks:
+      - monitoring
 
-  # Prometheus - сбор метрик
+  # Prometheus - сбор метрик (только внутренняя сеть!)
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
     restart: unless-stopped
-    ports:
-      - "9090:9090"
+    # Убираем внешний порт - доступ только через nginx
+    expose:
+      - "9090"
     volumes:
       - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
       - '--web.console.libraries=/usr/share/prometheus/console_libraries'
       - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - default
+      - monitoring
 
   # Grafana - визуализация
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
     restart: unless-stopped
-    depends_on:
-      - prometheus
-    ports:
-      - "3000:3000"
+    # Убираем внешний порт - доступ только через nginx
+    expose:
+      - "3000"
     environment:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
       - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=https://%(domain)s/
+      - GF_SECURITY_COOKIE_SECURE=true
+      - GF_SECURITY_STRICT_TRANSPORT_SECURITY=true
     volumes:
       - grafana-data:/var/lib/grafana
       - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards:ro
       - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - default
+      - monitoring
+
+networks:
+  monitoring:
+    internal: true  # Изолированная сеть для мониторинга
 
 volumes:
   chrome-profile-data:

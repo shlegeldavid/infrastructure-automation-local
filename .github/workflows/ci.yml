@@ -7,9 +7,94 @@ on:
     branches: [ main ]
 
 jobs:
+  # === ЛИНТЕРЫ ===
+  
+  lint-dockerfiles:
+    name: Lint Dockerfiles
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Lint datalens-bot Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: apps/datalens-bot/Dockerfile
+          failure-threshold: warning
+
+      - name: Lint provider-downs Dockerfile
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: apps/provider-downs/Dockerfile
+          failure-threshold: warning
+
+  lint-yaml:
+    name: Lint YAML files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Lint YAML files
+        uses: ibiqlik/action-yamllint@v3
+        with:
+          file_or_dir: .
+          config_data: |
+            extends: default
+            rules:
+              line-length: disable
+              truthy: disable
+              comments-indentation: disable
+
+  lint-ansible:
+    name: Lint Ansible
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ansible-lint
+        uses: ansible/ansible-lint@v24
+        with:
+          targets: ansible/playbook.yml
+
+  # === ВАЛИДАЦИЯ ===
+
+  validate-terraform:
+    name: Validate Terraform
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform format check
+        run: terraform -chdir=terraform fmt -check -diff
+
+      - name: Terraform init
+        run: terraform -chdir=terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform -chdir=terraform validate
+
+  validate-compose:
+    name: Validate docker-compose
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        run: docker compose config --quiet
+
+  # === БИЛДЫ ===
+
   build-python:
     name: Build Python Parser
     runs-on: ubuntu-latest
+    needs: [lint-dockerfiles, validate-compose]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -22,24 +107,21 @@ jobs:
         with:
           context: ./apps/datalens-bot
           push: false
-          load: true  # Загружаем в локальный Docker для тестов
+          load: true
           tags: datalens-bot:test
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Smoke test - Python parser starts
         run: |
-          # Запускаем контейнер с таймаутом 10 секунд
           docker run --rm -d --name smoke-test-python \
             -e TG_BOT_TOKEN=test \
             -e TG_CHAT_ID=test \
             -e SELENIUM_HOST=http://fake:4444 \
             datalens-bot:test
           
-          # Ждём 5 секунд
           sleep 5
           
-          # Проверяем что контейнер запустился (не упал сразу)
           if docker ps | grep -q smoke-test-python; then
             echo "✅ Python parser started successfully"
             docker stop smoke-test-python
@@ -53,6 +135,7 @@ jobs:
   build-csharp:
     name: Build C# Parser
     runs-on: ubuntu-latest
+    needs: [lint-dockerfiles, validate-compose]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -72,19 +155,15 @@ jobs:
 
       - name: Smoke test - C# parser starts
         run: |
-          # Создаём фейковый credentials файл для теста
           mkdir -p /tmp/test-creds
           echo '{"type":"service_account","project_id":"test"}' > /tmp/test-creds/provider-falls-ea0c76990c0c.json
           
-          # Запускаем контейнер
           docker run --rm -d --name smoke-test-csharp \
             -v /tmp/test-creds/provider-falls-ea0c76990c0c.json:/app/provider-falls-ea0c76990c0c.json:ro \
             provider-downs:test
           
-          # Ждём 5 секунд
           sleep 5
           
-          # Проверяем запуск
           if docker ps -a | grep -q smoke-test-csharp; then
             echo "✅ C# parser container created"
             docker logs smoke-test-csharp || true
@@ -94,6 +173,8 @@ jobs:
             echo "❌ C# parser failed"
             exit 1
           fi
+
+  # === БЕЗОПАСНОСТЬ ===
 
   security-scan-python:
     name: Security Scan - Python
@@ -111,7 +192,7 @@ jobs:
         with:
           image-ref: 'datalens-bot:scan'
           format: 'table'
-          exit-code: '0'  # Не фейлим сборку, только предупреждаем
+          exit-code: '0'
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
 
@@ -121,7 +202,7 @@ jobs:
           image-ref: 'datalens-bot:scan'
           format: 'table'
           scanners: 'secret'
-          exit-code: '1'  # Фейлим если нашли секреты!
+          exit-code: '1'
 
   security-scan-csharp:
     name: Security Scan - C#
@@ -151,16 +232,25 @@ jobs:
           scanners: 'secret'
           exit-code: '1'
 
-  validate-compose:
-    name: Validate docker-compose
+  security-scan-repo:
+    name: Security Scan - Repository
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Validate docker-compose.yml
-        run: docker compose config
-  
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL,HIGH'
+          scanners: 'secret'
+
+  # === ТЕСТЫ МОНИТОРИНГА ===
+
   test-monitoring:
     name: Test Monitoring Configs
     runs-on: ubuntu-latest
@@ -168,23 +258,23 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Проверка конфига Prometheus (используем promtool из образа prometheus)
       - name: Validate Prometheus config
         run: |
-         docker run --rm --entrypoint promtool -v $(pwd)/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml \
-          prom/prometheus:latest check config /etc/prometheus/prometheus.yml
-       # Проверка конфига Nginx
-      # Проверка конфига Nginx
+          docker run --rm --entrypoint promtool \
+            -v $(pwd)/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml \
+            prom/prometheus:latest check config /etc/prometheus/prometheus.yml
+
       - name: Validate Nginx config
         run: |
-          # Создаем фейковую директорию и сертификаты
           mkdir -p monitoring/ssl
           openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
             -keyout monitoring/ssl/self-signed.key \
             -out monitoring/ssl/self-signed.crt \
             -subj "/CN=localhost"
-            
-          # Запускаем проверку
+          
+          # Создаём фейковый htpasswd
+          echo "admin:fakepassword" > monitoring/ssl/.htpasswd
+          
           docker run --rm \
             --add-host grafana:127.0.0.1 \
             --add-host prometheus:127.0.0.1 \
@@ -193,24 +283,15 @@ jobs:
             -v $(pwd)/monitoring/ssl:/etc/nginx/ssl:ro \
             nginx:alpine nginx -t
 
-      # Smoke-тест Grafana
       - name: Smoke test - Grafana starts
         run: |
-          # Создаём фейковые структуры
-          mkdir -p monitoring/grafana-dashboards
-          touch monitoring/grafana-dashboards/dashboard.yml
-          touch monitoring/grafana-datasources.yml
-          
-          # Запускаем Grafana
           docker run --rm -d --name smoke-grafana \
             -e GF_SECURITY_ADMIN_PASSWORD=test \
             -p 3000:3000 \
             grafana/grafana:latest
           
-          # Ждём старта
           sleep 10
           
-          # Проверяем API (должен ответить 200 OK или JSON)
           if curl -f http://localhost:3000/api/health; then
             echo "✅ Grafana is healthy"
           else
@@ -221,14 +302,67 @@ jobs:
           
           docker stop smoke-grafana
 
-  security-summary:
-    name: Security Summary
+      - name: Smoke test - Prometheus starts
+        run: |
+          docker run --rm -d --name smoke-prometheus \
+            -v $(pwd)/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+            -p 9090:9090 \
+            prom/prometheus:latest
+          
+          sleep 10
+          
+          if curl -f http://localhost:9090/-/healthy; then
+            echo "✅ Prometheus is healthy"
+          else
+            echo "❌ Prometheus failed to start"
+            docker logs smoke-prometheus
+            exit 1
+          fi
+          
+          docker stop smoke-prometheus
+
+  # === ИТОГОВЫЙ ОТЧЁТ ===
+
+  ci-summary:
+    name: CI Summary
     runs-on: ubuntu-latest
-    needs: [security-scan-python, security-scan-csharp]
+    needs: 
+      - lint-dockerfiles
+      - lint-yaml
+      - lint-ansible
+      - validate-terraform
+      - validate-compose
+      - build-python
+      - build-csharp
+      - security-scan-python
+      - security-scan-csharp
+      - security-scan-repo
+      - test-monitoring
     if: always()
     steps:
-      - name: Security check results
+      - name: Check all jobs status
         run: |
-          echo "🔒 Security scans completed"
-          echo "✅ No secrets found in Docker images"
-          echo "✅ Vulnerability scans finished"
+          echo "## CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint Dockerfiles | ${{ needs.lint-dockerfiles.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint YAML | ${{ needs.lint-yaml.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Lint Ansible | ${{ needs.lint-ansible.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate Terraform | ${{ needs.validate-terraform.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate Compose | ${{ needs.validate-compose.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Python | ${{ needs.build-python.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build C# | ${{ needs.build-csharp.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Python | ${{ needs.security-scan-python.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security C# | ${{ needs.security-scan-csharp.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security Repo | ${{ needs.security-scan-repo.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Monitoring Tests | ${{ needs.test-monitoring.result }} |" >> $GITHUB_STEP_SUMMARY
+          
+          # Fail if any critical job failed
+          if [[ "${{ needs.security-scan-repo.result }}" == "failure" ]]; then
+            echo "❌ Security scan found issues!"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ CI Pipeline completed"
