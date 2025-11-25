@@ -66,3 +66,24 @@
         hour: "*/3"
         job: "cd /opt/parsers && docker compose run --rm provider-downs >> /var/log/provider-downs.log 2>&1"
         user: root
+
+    - name: Create monitoring directory
+      file:
+        path: /opt/parsers/monitoring
+        state: directory
+        mode: '0755'
+
+    - name: Create SSL directory
+      file:
+        path: /opt/parsers/monitoring/ssl
+        state: directory
+        mode: '0700'
+
+    - name: Generate self-signed SSL certificate
+      shell: |
+        openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+          -keyout /opt/parsers/monitoring/ssl/self-signed.key \
+          -out /opt/parsers/monitoring/ssl/self-signed.crt \
+          -subj "/C=RU/ST=Moscow/L=Moscow/O=Parsers/CN={{ ansible_host }}"
+      args:
+        creates: /opt/parsers/monitoring/ssl/self-signed.crt

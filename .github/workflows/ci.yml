@@ -160,6 +160,53 @@ jobs:
 
       - name: Validate docker-compose.yml
         run: docker compose config
+  
+  test-monitoring:
+    name: Test Monitoring Configs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Проверка конфига Prometheus (используем promtool из образа prometheus)
+      - name: Validate Prometheus config
+        run: |
+          docker run --rm -v $(pwd)/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml \
+            prom/prometheus:latest check config /etc/prometheus/prometheus.yml
+
+      # Проверка конфига Nginx
+      - name: Validate Nginx config
+        run: |
+          docker run --rm -v $(pwd)/monitoring/nginx.conf:/etc/nginx/nginx.conf:ro \
+            nginx:alpine nginx -t
+
+      # Smoke-тест Grafana
+      - name: Smoke test - Grafana starts
+        run: |
+          # Создаём фейковые структуры
+          mkdir -p monitoring/grafana-dashboards
+          touch monitoring/grafana-dashboards/dashboard.yml
+          touch monitoring/grafana-datasources.yml
+          
+          # Запускаем Grafana
+          docker run --rm -d --name smoke-grafana \
+            -e GF_SECURITY_ADMIN_PASSWORD=test \
+            -p 3000:3000 \
+            grafana/grafana:latest
+          
+          # Ждём старта
+          sleep 10
+          
+          # Проверяем API (должен ответить 200 OK или JSON)
+          if curl -f http://localhost:3000/api/health; then
+            echo "✅ Grafana is healthy"
+          else
+            echo "❌ Grafana failed to start"
+            docker logs smoke-grafana
+            exit 1
+          fi
+          
+          docker stop smoke-grafana
 
   security-summary:
     name: Security Summary

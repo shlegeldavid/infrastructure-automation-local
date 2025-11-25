@@ -69,6 +69,8 @@ jobs:
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
             TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
             FIRST_RUN=${FIRST_RUN_MODE}
+            GRAFANA_PASSWORD=${{ secrets.GRAFANA_PASSWORD }}
+            GRAFANA_USER=${{ secrets.GRAFANA_USER }}
             EOF
             
             # Создаем Google Sheets credentials
