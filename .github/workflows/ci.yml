@@ -171,9 +171,8 @@ jobs:
       # Проверка конфига Prometheus (используем promtool из образа prometheus)
       - name: Validate Prometheus config
         run: |
-          docker run --rm -v $(pwd)/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml \
-            prom/prometheus:latest check config /etc/prometheus/prometheus.yml
-
+         docker run --rm --entrypoint promtool -v $(pwd)/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml \
+          prom/prometheus:latest check config /etc/prometheus/prometheus.yml
       # Проверка конфига Nginx
       - name: Validate Nginx config
         run: |
