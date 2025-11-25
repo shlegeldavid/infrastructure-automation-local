@@ -35,7 +35,8 @@ services:
   provider-downs:
     image: ghcr.io/shlegeldavid/provider-downs:latest
     container_name: provider-downs
-    restart: unless-stopped
+    profiles:
+      - manual
     volumes:
       - ./data:/app/data
       - ./apps/provider-downs/provider-falls-ea0c76990c0c.json:/app/provider-falls-ea0c76990c0c.json:ro

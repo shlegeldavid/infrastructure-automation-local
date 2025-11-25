@@ -54,33 +54,57 @@ jobs:
           script: |
             cd /opt/parsers
             
-            # Создаем .env файл из секретов
+            # Проверяем первый запуск (файл-маркер)
+            if [ ! -f /opt/parsers/.first_run_completed ]; then
+              echo "⚠️  FIRST RUN DETECTED"
+              echo "Creating .env with FIRST_RUN=true"
+              FIRST_RUN_MODE=true
+            else
+              echo "✅ Normal deployment"
+              FIRST_RUN_MODE=false
+            fi
+            
+            # Создаем .env файл
             cat > .env << EOF
             TG_BOT_TOKEN=${{ secrets.TG_BOT_TOKEN }}
             TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
-            FIRST_RUN=false
+            FIRST_RUN=${FIRST_RUN_MODE}
             EOF
             
-            # Создаем Google Sheets credentials для C# парсера
+            # Создаем Google Sheets credentials
+            mkdir -p apps/provider-downs
             cat > apps/provider-downs/provider-falls-ea0c76990c0c.json << 'EOJ'
             ${{ secrets.GOOGLE_SHEETS_CREDENTIALS }}
             EOJ
             
-            # Логинимся в GHCR (нужен Personal Access Token)
+            # Логинимся в GHCR
             echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin
             
             # Обновляем docker-compose.yml
             curl -o docker-compose.yml https://raw.githubusercontent.com/${{ github.repository }}/main/docker-compose.yml
             
-            # Пулим свежие образы из GHCR
-            docker pull ghcr.io/${{ github.repository_owner }}/datalens-bot:latest
-            docker pull ghcr.io/${{ github.repository_owner }}/provider-downs:latest
+            # Пулим свежие образы
+            docker compose pull
             
             # Останавливаем старые контейнеры
-            docker-compose down
+            docker compose down
             
-            # Запускаем новые
-            docker-compose up -d
+            # Если первый запуск - НЕ запускаем автоматически
+            if [ "$FIRST_RUN_MODE" = "true" ]; then
+              echo "⚠️  FIRST RUN MODE ACTIVE"
+              echo "Manual intervention required:"
+              echo "1. SSH to server: ssh root@${{ secrets.SERVER_IP }}"
+              echo "2. Run: cd /opt/parsers && docker compose up datalens-bot"
+              echo "3. Open http://${{ secrets.SERVER_IP }}:7900 (password: secret)"
+              echo "4. Complete login/captcha"
+              echo "5. Stop container (Ctrl+C)"
+              echo "6. Mark as completed: touch /opt/parsers/.first_run_completed"
+              echo "7. Start normally: docker compose up -d"
+              exit 0
+            fi
+            
+            # Обычный запуск
+            docker compose up -d
             
             # Чистим старые образы
             docker system prune -af --filter "until=24h"

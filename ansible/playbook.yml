@@ -58,3 +58,11 @@
     - name: Print Docker version
       debug:
         msg: "Docker installed: {{ docker_ver.stdout }}"
+    
+    - name: Create cron job for provider-downs parser
+      cron:
+        name: "Run provider-downs parser"
+        minute: "0"
+        hour: "*/3"
+        job: "cd /opt/parsers && docker compose run --rm provider-downs >> /var/log/provider-downs.log 2>&1"
+        user: root
