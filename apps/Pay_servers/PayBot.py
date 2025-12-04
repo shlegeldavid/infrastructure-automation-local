@@ -9,8 +9,8 @@ import os
 # ---------------------------
 # CONFIG
 # ---------------------------
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN_RUVDS")
+CHAT_ID = os.getenv("CHAT_ID_RUVDS")
 RUVDS_TOKEN = os.getenv("RUVDS_TOKEN")
 
 API_URL = "https://api.ruvds.com/v2"

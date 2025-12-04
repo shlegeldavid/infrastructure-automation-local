@@ -81,6 +81,18 @@ services:
         reservations:
           memory: 256M
 
+  paybot:
+    build: .
+    container_name: payservers_bot
+    restart: always
+    environment:
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_TOKEN_RUVDS}"
+      CHAT_ID: "${CHAT_ID_RUVDS}"
+      RUVDS_TOKEN: "${RUVDS_TOKEN}"
+      API_URL: "https://api.ruvds.com/v2"
+    volumes:
+      - ./logs:/app/logs
+
   # === МОНИТОРИНГ ===
   
   # cAdvisor - метрики контейнеров (только внутренняя сеть!)
