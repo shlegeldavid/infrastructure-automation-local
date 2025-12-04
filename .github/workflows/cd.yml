@@ -68,9 +68,9 @@ jobs:
             TG_CHAT_ID=${{ secrets.TG_CHAT_ID }}
             GRAFANA_PASSWORD=${{ secrets.GRAFANA_PASSWORD }}
             GRAFANA_USER=${{ secrets.GRAFANA_USER }}
-            RUVDS_TOKEN=${{ secrets.GRAFANA_USER }}
-            TELEGRAM_TOKEN_RUVDS=${{ secrets.GRAFANA_USER }}
-            CHAT_ID_RUVDS=${{ secrets.GRAFANA_USER }}
+            RUVDS_TOKEN=${{ secrets.RUVDS_TOKEN }}
+            TELEGRAM_TOKEN_RUVDS=${{ secrets.TELEGRAM_TOKEN_RUVDS }}
+            CHAT_ID_RUVDS=${{ secrets.CHAT_ID_RUVDS }}
             FIRST_RUN=false
             ENVEOF
             chmod 600 .env
