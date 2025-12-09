@@ -99,6 +99,31 @@ services:
         reservations:
           memory: 64M
 
+  yandex-parser_v2:
+    image: ghcr.io/shlegeldavid/yandex-parser_v2:latest
+    container_name: yandex-parser_v2
+    restart: unless-stopped
+
+    environment:
+      - DISPLAY=:99
+      - TZ=Europe/Moscow
+
+    volumes:
+      - ./apps/yandex-parser/service_account.json:/app/service_account.json:ro
+      - ./apps/yandex-parser/oauth_client.json:/app/oauth_client.json:ro
+      - ./apps/yandex-parser/chrome_profile:/app/chrome_profile
+      - ./apps/yandex-parser/screenshots:/app/screenshots
+
+    ports:
+      - "7900:7900"   # доступ к noVNC в браузере
+
+    deploy:
+      resources:
+        limits:
+          memory: 2G     # selenium + chrome жрёт много
+        reservations:
+          memory: 512M
+
   # === МОНИТОРИНГ ===
 
   # cAdvisor - метрики контейнеров (только внутренняя сеть!)
