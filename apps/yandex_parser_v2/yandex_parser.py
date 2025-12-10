@@ -31,6 +31,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
 
+COOKIES_PATH = "/app/data/yandex_search_cookies.json"
+TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN_YANDEX_PARSER_V2")
+TG_CHAT_ID = os.environ.get("TG_CHAT_ID_YANDEX_PARSER_V2")
+
 DRIVE_OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 CONFIG = {
@@ -115,6 +119,30 @@ SHEETS_SCOPES = [
     "https://www.googleapis.com/auth/drive",
     "https://www.googleapis.com/auth/drive.file",
 ]
+
+def send_telegram(text):
+    """Отправляет сообщение в Telegram."""
+    if not TG_BOT_TOKEN or not TG_CHAT_ID:
+        return
+    try:
+        requests.post(
+            f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage",
+            data={"chat_id": TG_CHAT_ID, "text": text},
+            timeout=10
+        )
+    except:
+        pass
+
+def save_cookies(driver):
+    """Сохраняет cookies в файл."""
+    try:
+        cookies = driver.get_cookies()
+        os.makedirs(os.path.dirname(COOKIES_PATH), exist_ok=True)
+        with open(COOKIES_PATH, 'w') as f:
+            json.dump(cookies, f)
+        print(f"[COOKIES] Сохранено {len(cookies)} cookies")
+    except Exception as e:
+        print(f"[COOKIES] Ошибка сохранения: {e}")
 
 def get_google_creds():
     return Credentials.from_service_account_file(CONFIG["google_sa_json_path"], scopes=SHEETS_SCOPES)
