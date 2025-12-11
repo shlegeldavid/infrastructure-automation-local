@@ -2,6 +2,11 @@ name: CD - Deploy to Server
 
 on:
   workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to deploy (all, datalens-bot, provider-downs, payservers-bot, yandex-parser)'
+        required: false
+        default: 'all'
 
 jobs:
   deploy:
@@ -86,8 +91,7 @@ jobs:
             ENVEOF
             chmod 600 .env
 
-            mkdir -p apps/yandex_parser_v2
-
+            echo "=== Создаем Google credentials для yandex-parser ==="
             cat > apps/yandex_parser_v2/service_account.json << 'SAEOF'
             ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
             SAEOF
@@ -99,7 +103,6 @@ jobs:
             cat > apps/yandex_parser_v2/token_drive.json << 'TDEOF'
             ${{ secrets.GOOGLE_DRIVE_TOKEN }}
             TDEOF
-
             chmod 600 apps/yandex_parser_v2/*.json
             
             echo "=== Логинимся в GHCR ==="
@@ -119,12 +122,44 @@ jobs:
             docker compose up -d
             
             echo "=== Ждем запуска сервисов ==="
-            sleep 15
+            sleep 20
             
             echo "=== Статус контейнеров ==="
             docker compose ps
+
+            echo "=== Health checks ==="
+            FAILED=0
             
+            if curl -sf -o /dev/null http://localhost:3000/api/health; then
+              echo "✅ Grafana: OK"
+            else
+              echo "❌ Grafana: FAILED"
+              FAILED=1
+            fi
+
+            if curl -sf -o /dev/null http://localhost:9090/-/healthy; then
+              echo "✅ Prometheus: OK"
+            else
+              echo "❌ Prometheus: FAILED"
+              FAILED=1
+            fi
+
+            for svc in datalens-bot selenium-chrome prometheus grafana; do
+              if docker compose ps | grep -q "$svc.*running"; then
+                echo "✅ $svc: running"
+              else
+                echo "❌ $svc: not running"
+                FAILED=1
+              fi
+            done
+
             echo "=== Чистим старые образы ==="
             docker image prune -af --filter "until=24h"
             
+            if [ $FAILED -eq 1 ]; then
+              echo "⚠️ Some health checks failed, but deployment completed"
+              echo "=== Логи проблемных сервисов ==="
+              docker compose logs --tail=50
+            fi
+
             echo "✅ Deployment completed!"
