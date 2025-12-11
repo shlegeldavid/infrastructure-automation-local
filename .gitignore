@@ -16,3 +16,6 @@ id_rsa
 id_ed25519
 .env
 provider-falls-ea0c76990c0c.json
+service_account.json
+token_drive.json
+oauth_client.json

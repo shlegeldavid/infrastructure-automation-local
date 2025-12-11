@@ -107,15 +107,18 @@ services:
     environment:
       - DISPLAY=:99
       - TZ=Europe/Moscow
+      - TG_BOT_TOKEN_YANDEX_PARSER_V2
+      - TG_CHAT_ID_YANDEX_PARSER_V2
 
     volumes:
-      - ./apps/yandex-parser/service_account.json:/app/service_account.json:ro
-      - ./apps/yandex-parser/oauth_client.json:/app/oauth_client.json:ro
-      - ./apps/yandex-parser/chrome_profile:/app/chrome_profile
-      - ./apps/yandex-parser/screenshots:/app/screenshots
+      - ./data:/app/data
+      - ./apps/yandex_parser_v2/service_account.json:/app/service_account.json:ro
+      - ./apps/yandex_parser_v2/oauth_client.json:/app/oauth_client.json:ro
+      - ./apps/yandex_parser_v2/token_drive.json:/app/token_drive.json
 
     ports:
-      - "7900:7900"   # доступ к noVNC в браузере
+      - "127.0.0.1:7901:5900"   # VNC
+      - "127.0.0.1:6081:6080"   # noVNC web
 
     deploy:
       resources:

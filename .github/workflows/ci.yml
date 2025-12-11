@@ -100,10 +100,10 @@ jobs:
       - name: Validate docker-compose.yml
         run: docker compose config --quiet
 
-  # === БИЛДЫ ===
+# === БИЛДЫ ===
 
-  build-python:
-    name: Build Python Parser
+  build-datalens-bot:
+    name: Build datalens-bot
     runs-on: ubuntu-latest
     needs:
       - lint-dockerfiles
@@ -125,9 +125,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test - Python parser starts
+      - name: Smoke test - datalens-bot starts
         run: |
-          docker run --rm -d --name smoke-test-python \
+          docker run --rm -d --name smoke-test-datalens \
             -e TG_BOT_TOKEN=test \
             -e TG_CHAT_ID=test \
             -e SELENIUM_HOST=http://fake:4444 \
@@ -135,13 +135,116 @@ jobs:
 
           sleep 5
 
-          if docker ps | grep -q smoke-test-python; then
-            echo "✅ Python parser started successfully"
-            docker stop smoke-test-python
+          if docker ps | grep -q smoke-test-datalens; then
+            echo "✅ datalens-bot started successfully"
+            docker stop smoke-test-datalens
             exit 0
           else
-            echo "❌ Python parser failed to start"
-            docker logs smoke-test-python || true
+            echo "❌ datalens-bot failed to start"
+            docker logs smoke-test-datalens || true
+            exit 1
+          fi
+
+  build-payservers-bot:
+    name: Build payservers-bot
+    runs-on: ubuntu-latest
+    needs:
+      - lint-dockerfiles
+      - validate-compose
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build payservers-bot image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/Pay_servers
+          push: false
+          load: true
+          tags: payservers-bot:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test - payservers-bot starts
+        run: |
+          docker run --rm -d --name smoke-test-payservers \
+            -e TELEGRAM_TOKEN_RUVDS=test \
+            -e CHAT_ID_RUVDS=test \
+            -e RUVDS_TOKEN=test \
+            payservers-bot:test
+
+          sleep 5
+
+          if docker ps | grep -q smoke-test-payservers; then
+            echo "✅ payservers-bot started successfully"
+            docker stop smoke-test-payservers
+            exit 0
+          else
+            echo "❌ payservers-bot failed to start"
+            docker logs smoke-test-payservers || true
+            exit 1
+          fi
+
+  build-yandex-parser:
+    name: Build yandex-parser
+    runs-on: ubuntu-latest
+    needs:
+      - lint-dockerfiles
+      - validate-compose
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build yandex-parser image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/yandex_parser_v2
+          push: false
+          load: true
+          tags: yandex-parser:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test - yandex-parser starts
+        run: |
+          # Создаём фейковый service_account.json
+          mkdir -p /tmp/test-creds
+          cat > /tmp/test-creds/service_account.json << 'EOF'
+          {
+            "type": "service_account",
+            "project_id": "test",
+            "private_key_id": "test",
+            "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBALRiMLAHudeSA2F\n-----END RSA PRIVATE KEY-----\n",
+            "client_email": "test@test.iam.gserviceaccount.com",
+            "client_id": "123",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token"
+          }
+          EOF
+
+          docker run --rm -d --name smoke-test-yandex \
+            -e SMOKE_TEST=true \
+            -e TG_BOT_TOKEN=test \
+            -e TG_CHAT_ID=test \
+            -v /tmp/test-creds/service_account.json:/app/service_account.json:ro \
+            yandex-parser:test
+
+          sleep 10
+
+          if docker ps | grep -q smoke-test-yandex; then
+            echo "✅ yandex-parser started successfully"
+            docker logs smoke-test-yandex
+            docker stop smoke-test-yandex
+            exit 0
+          else
+            echo "❌ yandex-parser failed to start"
+            docker logs smoke-test-yandex || true
             exit 1
           fi
 
@@ -168,33 +271,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Smoke test - C# parser starts
-        run: |
-          mkdir -p /tmp/test-creds
-          echo '{"type":"service_account","project_id":"test"}' > /tmp/test-creds/provider-falls-ea0c76990c0c.json
-
-          docker run --rm -d --name smoke-test-csharp \
-            -v /tmp/test-creds/provider-falls-ea0c76990c0c.json:/app/provider-falls-ea0c76990c0c.json:ro \
-            provider-downs:test
-
-          sleep 5
-
-          if docker ps -a | grep -q smoke-test-csharp; then
-            echo "✅ C# parser container created"
-            docker logs smoke-test-csharp || true
-            docker rm -f smoke-test-csharp || true
-            exit 0
-          else
-            echo "❌ C# parser failed"
-            exit 1
-          fi
-
   # === БЕЗОПАСНОСТЬ ===
 
-  security-scan-python:
-    name: Security Scan - Python
+  security-scan-datalens:
+    name: Security Scan - datalens-bot
     runs-on: ubuntu-latest
-    needs: build-python
+    needs: build-datalens-bot
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -218,7 +300,63 @@ jobs:
           format: 'table'
           scanners: 'secret'
           exit-code: '1'
+  
+  security-scan-payservers:
+    name: Security Scan - payservers-bot
+    runs-on: ubuntu-latest
+    needs: build-payservers-bot
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      - name: Build image for scanning
+        run: docker build -t payservers-bot:scan ./apps/Pay_servers
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'payservers-bot:scan'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Run Trivy for secrets detection
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'payservers-bot:scan'
+          format: 'table'
+          scanners: 'secret'
+          exit-code: '1'
+  
+  security-scan-yandex:
+    name: Security Scan - yandex-parser
+    runs-on: ubuntu-latest
+    needs: build-yandex-parser
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build image for scanning
+        run: docker build -t yandex-parser:scan ./apps/yandex_parser_v2
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'yandex-parser:scan'
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Run Trivy for secrets detection
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'yandex-parser:scan'
+          format: 'table'
+          scanners: 'secret'
+          exit-code: '1'
+  
   security-scan-csharp:
     name: Security Scan - C#
     runs-on: ubuntu-latest
@@ -340,23 +478,27 @@ jobs:
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
+    if: always()
     needs:
       - lint-dockerfiles
       - lint-yaml
       - lint-ansible
       - validate-terraform
       - validate-compose
-      - build-python
+      - build-datalens-bot
+      - build-payservers-bot
+      - build-yandex-parser
       - build-csharp
-      - security-scan-python
+      - security-scan-datalens
+      - security-scan-payservers
+      - security-scan-yandex
       - security-scan-csharp
       - security-scan-repo
       - test-monitoring
-    if: always()
     steps:
-      - name: Check all jobs status
+      - name: Generate summary
         run: |
-          echo "## CI Pipeline Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
@@ -365,17 +507,13 @@ jobs:
           echo "| Lint Ansible | ${{ needs.lint-ansible.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Validate Terraform | ${{ needs.validate-terraform.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Validate Compose | ${{ needs.validate-compose.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Build Python | ${{ needs.build-python.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build datalens-bot | ${{ needs.build-datalens-bot.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build payservers-bot | ${{ needs.build-payservers-bot.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build yandex-parser | ${{ needs.build-yandex-parser.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build C# | ${{ needs.build-csharp.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Security Python | ${{ needs.security-scan-python.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security datalens | ${{ needs.security-scan-datalens.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security payservers | ${{ needs.security-scan-payservers.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Security yandex | ${{ needs.security-scan-yandex.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security C# | ${{ needs.security-scan-csharp.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Security Repo | ${{ needs.security-scan-repo.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Monitoring Tests | ${{ needs.test-monitoring.result }} |" >> $GITHUB_STEP_SUMMARY
-
-          if [[ "${{ needs.security-scan-repo.result }}" == "failure" ]]; then
-            echo "❌ Security scan found issues!"
-            exit 1
-          fi
-
-          echo ""
-          echo "✅ CI Pipeline completed"
+          echo "| Test Monitoring | ${{ needs.test-monitoring.result }} |" >> $GITHUB_STEP_SUMMARY

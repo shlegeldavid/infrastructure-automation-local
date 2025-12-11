@@ -50,6 +50,15 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/payservers_bot:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+        
+      - name: Build and push yandex_parser_v2
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/yandex_parser_v2
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/yandex_parser_v2:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1.0.3
@@ -71,9 +80,27 @@ jobs:
             RUVDS_TOKEN=${{ secrets.RUVDS_TOKEN }}
             TELEGRAM_TOKEN_RUVDS=${{ secrets.TELEGRAM_TOKEN_RUVDS }}
             CHAT_ID_RUVDS=${{ secrets.CHAT_ID_RUVDS }}
+            TG_BOT_TOKEN_YANDEX_PARSER_V2=${{ secrets.TG_BOT_TOKEN_YANDEX_PARSER_V2 }}
+            TG_CHAT_ID_YANDEX_PARSER_V2=${{ secrets.TG_CHAT_ID_YANDEX_PARSER_V2 }}
             FIRST_RUN=false
             ENVEOF
             chmod 600 .env
+
+            mkdir -p apps/yandex_parser_v2
+
+            cat > apps/yandex_parser_v2/service_account.json << 'SAEOF'
+            ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
+            SAEOF
+
+            cat > apps/yandex_parser_v2/oauth_client.json << 'OAEOF'
+            ${{ secrets.GOOGLE_OAUTH_CLIENT }}
+            OAEOF
+
+            cat > apps/yandex_parser_v2/token_drive.json << 'TDEOF'
+            ${{ secrets.GOOGLE_DRIVE_TOKEN }}
+            TDEOF
+
+            chmod 600 apps/yandex_parser_v2/*.json
             
             echo "=== Логинимся в GHCR ==="
             echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u ${{ github.repository_owner }} --password-stdin

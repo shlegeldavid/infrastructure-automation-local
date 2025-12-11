@@ -1,13 +1,17 @@
-FROM python:3.10-slim
+Установлены xvfb, x11vnc, novnc, но нет скрипта который их запустит перед Python.
+3. Нет EXPOSE для портов
+Исправленный Dockerfile:
+dockerfileFROM python:3.10-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV DISPLAY=:99
 
 # -------- СИСТЕМНЫЕ ЗАВИСИМОСТИ --------
 RUN apt-get update && apt-get install -y \
     wget unzip gnupg xvfb x11vnc websockify novnc \
     libnss3 libgdk-pixbuf2.0-0 libgtk-3-0 libxss1 libasound2 libxshmfence1 \
     libgbm1 libu2f-udev libvulkan1 libglib2.0-0 libdrm2 libxtst6 libxrandr2 \
-    ca-certificates fonts-liberation \
+    ca-certificates fonts-liberation supervisor \
     && rm -rf /var/lib/apt/lists/*
 
 # -------- УСТАНОВКА Google Chrome (stable) --------
@@ -24,7 +28,7 @@ RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d'.' -f1)
     chmod +x /usr/bin/chromedriver && \
     rm -rf chromedriver-linux64 chromedriver-linux64.zip
 
-# -------- Python зависимости (твой файл) --------
+# -------- Python зависимости --------
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
@@ -32,4 +36,10 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 WORKDIR /app
 COPY . /app
 
-CMD ["python", "main.py"]
+# -------- Entrypoint скрипт --------
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 5900 6080
+
+ENTRYPOINT ["/entrypoint.sh"]
