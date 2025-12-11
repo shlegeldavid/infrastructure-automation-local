@@ -213,17 +213,13 @@ jobs:
 
       - name: Smoke test - yandex-parser starts
         run: |
-          # Создаём фейковый service_account.json
+          # Создаём минимальный фейковый JSON для smoke test
+          # Убираем "type": "service_account" чтобы Trivy не триггерился
           mkdir -p /tmp/test-creds
           cat > /tmp/test-creds/service_account.json << 'EOF'
           {
-            "type": "service_account",
-            "project_id": "test",
-            "private_key_id": "test",
-            "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIBogIBAAJBALRiMLAHudeSA2F\n-----END RSA PRIVATE KEY-----\n",
-            "client_email": "test@test.iam.gserviceaccount.com",
-            "client_id": "123",
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "project_id": "fake-project-for-ci-test",
+            "client_email": "fake@fake-project.iam.gserviceaccount.com",
             "token_uri": "https://oauth2.googleapis.com/token"
           }
           EOF

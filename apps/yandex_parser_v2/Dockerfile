@@ -6,7 +6,7 @@ ENV DISPLAY=:99
 # -------- СИСТЕМНЫЕ ЗАВИСИМОСТИ --------
 RUN apt-get update && apt-get install -y \
     wget unzip gnupg xvfb x11vnc websockify novnc \
-    libnss3 libgdk-pixbuf2.0-0 libgtk-3-0 libxss1 libasound2 libxshmfence1 \
+    libnss3 libgdk-pixbuf-2.0-0 libgtk-3-0 libxss1 libasound2 libxshmfence1 \
     libgbm1 libu2f-udev libvulkan1 libglib2.0-0 libdrm2 libxtst6 libxrandr2 \
     ca-certificates fonts-liberation supervisor \
     && rm -rf /var/lib/apt/lists/*
@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y \
 # -------- УСТАНОВКА Google Chrome (stable) --------
 RUN wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb && \
     apt-get update && apt-get install -y ./google-chrome-stable_current_amd64.deb || true && \
-    rm google-chrome-stable_current_amd64.deb
+    rm google-chrome-stable_current_amd64.deb && \
+    rm -rf /var/lib/apt/lists/*
 
 # -------- ChromeDriver под текущую версию Chrome --------
 RUN CHROME_VERSION=$(google-chrome --version | awk '{print $3}' | cut -d'.' -f1) && \
