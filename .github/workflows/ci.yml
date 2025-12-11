@@ -401,6 +401,7 @@ jobs:
           exit-code: '1'
           severity: 'CRITICAL,HIGH'
           scanners: 'secret'
+          trivyignores: '.trivyignore'
 
   # === ТЕСТЫ МОНИТОРИНГА ===
 

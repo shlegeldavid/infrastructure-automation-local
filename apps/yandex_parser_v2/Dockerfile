@@ -1,7 +1,4 @@
-Установлены xvfb, x11vnc, novnc, но нет скрипта который их запустит перед Python.
-3. Нет EXPOSE для портов
-Исправленный Dockerfile:
-dockerfileFROM python:3.10-slim
+FROM python:3.10-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
