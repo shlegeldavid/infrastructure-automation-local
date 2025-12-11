@@ -98,7 +98,7 @@ CONFIG = {
 
     # Google Service Account (для Sheets)
     "google_sa_json_path": "service_account.json",
-    "cookies_path": "/app/data/yandex_search_cookies.json"
+    "cookies_path": "/app/data/yandex_search_cookies.json",
     "screenshot_dir": "/app/data/screenshots"
 }
 
