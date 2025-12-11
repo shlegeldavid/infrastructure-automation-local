@@ -223,23 +223,26 @@ jobs:
           }
           EOF
 
-          docker run -d --name smoke-test-yandex \
+          # Запускаем и ждём завершения
+          docker run --name smoke-test-yandex \
             -e SMOKE_TEST=true \
             -e TG_BOT_TOKEN=test \
             -e TG_CHAT_ID=test \
             -v /tmp/test-creds/service_account.json:/app/service_account.json:ro \
             yandex-parser:test
-
-          sleep 10
-
-          if docker ps | grep -q smoke-test-yandex; then
-            echo "✅ yandex-parser started successfully"
-            docker logs smoke-test-yandex
-            docker stop smoke-test-yandex
+          
+          EXIT_CODE=$?
+          
+          echo "=== Container logs ==="
+          docker logs smoke-test-yandex || true
+          
+          docker rm smoke-test-yandex || true
+          
+          if [ $EXIT_CODE -eq 0 ]; then
+            echo "✅ yandex-parser smoke test passed"
             exit 0
           else
-            echo "❌ yandex-parser failed to start"
-            docker logs smoke-test-yandex || true
+            echo "❌ yandex-parser smoke test failed with exit code $EXIT_CODE"
             exit 1
           fi
 
