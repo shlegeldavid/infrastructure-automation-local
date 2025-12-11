@@ -30,6 +30,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push datalens-bot
+        if: ${{ github.event.inputs.service == 'all' || github.event.inputs.service == 'datalens-bot' }}
         uses: docker/build-push-action@v5
         with:
           context: ./apps/datalens-bot
@@ -39,6 +40,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build and push provider-downs
+        if: ${{ github.event.inputs.service == 'all' || github.event.inputs.service == 'provider-downs' }}
         uses: docker/build-push-action@v5
         with:
           context: ./apps/provider-downs
@@ -47,21 +49,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       
-      - name: Build and push payservers_bot
+      - name: Build and push payservers-bot
+        if: ${{ github.event.inputs.service == 'all' || github.event.inputs.service == 'payservers-bot' }}
         uses: docker/build-push-action@v5
         with:
           context: ./apps/Pay_servers
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/payservers_bot:latest
+          tags: ghcr.io/${{ github.repository_owner }}/payservers-bot:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
         
-      - name: Build and push yandex_parser_v2
+      - name: Build and push yandex-parser
+        if: ${{ github.event.inputs.service == 'all' || github.event.inputs.service == 'yandex-parser' }}
         uses: docker/build-push-action@v5
         with:
           context: ./apps/yandex_parser_v2
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/yandex_parser_v2:latest
+          tags: ghcr.io/${{ github.repository_owner }}/yandex-parser:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
