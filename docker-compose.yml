@@ -100,7 +100,7 @@ services:
           memory: 64M
 
   yandex-parser_v2:
-    image: ghcr.io/shlegeldavid/yandex-parser_v2:latest
+    image: ghcr.io/shlegeldavid/yandex-parser:latest
     container_name: yandex-parser_v2
     restart: unless-stopped
 
