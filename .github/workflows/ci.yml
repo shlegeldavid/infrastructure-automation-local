@@ -223,7 +223,7 @@ jobs:
           }
           EOF
 
-          docker run --rm -d --name smoke-test-yandex \
+          docker run -d --name smoke-test-yandex \
             -e SMOKE_TEST=true \
             -e TG_BOT_TOKEN=test \
             -e TG_CHAT_ID=test \
