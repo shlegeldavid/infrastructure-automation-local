@@ -214,7 +214,6 @@ jobs:
       - name: Smoke test - yandex-parser starts
         run: |
           # Создаём минимальный фейковый JSON для smoke test
-          # Убираем "type": "service_account" чтобы Trivy не триггерился
           mkdir -p /tmp/test-creds
           cat > /tmp/test-creds/service_account.json << 'EOF'
           {
