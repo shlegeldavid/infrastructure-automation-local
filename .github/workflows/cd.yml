@@ -95,6 +95,8 @@ jobs:
             ENVEOF
             chmod 600 .env
 
+            mkdir -p apps/yandex_parser_v2
+
             echo "=== Создаем Google credentials для yandex-parser ==="
             cat > apps/yandex_parser_v2/service_account.json << 'SAEOF'
             ${{ secrets.GOOGLE_SERVICE_ACCOUNT }}
