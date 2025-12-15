@@ -4,7 +4,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV DISPLAY=:99
 
 # -------- СИСТЕМНЫЕ ЗАВИСИМОСТИ --------
-RUN apt-get update && apt-get install -y \
+RUN apt-get update || (sleep 5 && apt-get update) && apt-get install -y \
     wget unzip gnupg xvfb x11vnc websockify novnc \
     libnss3 libgdk-pixbuf-2.0-0 libgtk-3-0 libxss1 libasound2 libxshmfence1 \
     libgbm1 libu2f-udev libvulkan1 libglib2.0-0 libdrm2 libxtst6 libxrandr2 \
