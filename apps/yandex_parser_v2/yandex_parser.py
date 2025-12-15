@@ -502,55 +502,71 @@ def wait_user_to_solve_captcha(driver, query):
 # Core: parse Yandex SERP
 # =========================
 def parse_ads_positions(driver):
-    labels_xpath = "//span[normalize-space()='Реклама' or normalize-space()='Промо']"
+    # 1. Более широкий поиск метки. Ищем не только span, но и div/b/small,
+    # и используем contains вместо жесткого равенства (на случай "Реклама ·")
+    labels_xpath = "//*[(self::span or self::div or self::b) and (contains(text(), 'Реклама') or contains(text(), 'Промо'))]"
     label_nodes = driver.find_elements(By.XPATH, labels_xpath)
 
     items = []
+    seen_urls = set()
+
     for lab in label_nodes:
         try:
-            container = None
-            for xpath in [
-                "ancestor::article[1]",
-                "ancestor::li[contains(@class,'serp')][1]",
-                "ancestor::div[contains(@class,'serp')][1]",
-                "ancestor::*[contains(@class,'serp-item')][1]"
-            ]:
-                try:
-                    container = lab.find_element(By.XPATH, xpath)
-                    if container:
-                        break
-                except Exception:
-                    pass
-            if not container:
+            # Пропускаем, если текст слишком длинный (защита от ложных срабатываний в тексте статей)
+            if len(lab.text.strip()) > 15:
                 continue
 
-            link = None
-            for lx in [
-                ".//a[@href and (starts-with(@href,'http') or starts-with(@href,'https'))][1]",
-                ".//h2//a[@href][1]",
-                ".//a[@href][1]"
-            ]:
+            # 2. Ищем ссылку не только в контейнере, а "рядом" с меткой.
+            # Часто ссылка находится прямо в родительском блоке или является соседом.
+            # Поднимаемся на 5 уровней вверх и ищем первую попавшуюся жирную ссылку.
+            
+            found_link = None
+            parent = lab
+            
+            # Поднимаемся вверх по DOM-дереву (максимум на 6 уровней), чтобы найти обертку
+            for _ in range(6):
                 try:
-                    link = container.find_element(By.XPATH, lx)
-                    if link:
+                    parent = parent.find_element(By.XPATH, "..")
+                    # Ищем ссылку внутри текущего родителя, у которой есть href
+                    # Приоритет: ссылка с заголовком (h2/b) или просто ссылка с href
+                    links = parent.find_elements(By.XPATH, ".//a[@href]")
+                    
+                    # Фильтруем "технические" ссылки и ищем ту, что похожа на заголовок
+                    valid_links = [l for l in links if len(l.text.strip()) > 0 and not l.get_attribute("href").startswith("javascript")]
+                    
+                    if valid_links:
+                        # Берем первую, обычно она заголовочная в блоке рекламы
+                        found_link = valid_links[0]
                         break
                 except Exception:
-                    pass
-            if not link:
+                    break
+            
+            if not found_link:
                 continue
 
-            href = link.get_attribute("href") or ""
-            title = text_or_empty(link)
-            if not title:
+            href = found_link.get_attribute("href")
+            
+            # Дедупликация (иногда метка "Реклама" встречается дважды в одном блоке)
+            if href in seen_urls:
+                continue
+            seen_urls.add(href)
+
+            title = text_or_empty(found_link)
+            # Если текст ссылки пустой, пробуем найти заголовок рядом
+            if not title and parent:
                 try:
-                    title = text_or_empty(container.find_element(By.XPATH, ".//h2|.//h3"))
-                except Exception:
+                    title = text_or_empty(parent.find_element(By.XPATH, ".//h2 | .//h3 | .//div[contains(@class, 'title')]"))
+                except:
                     pass
 
-            y = container.location.get("y", 10**9)
+            # Координата Y для сортировки
+            y = 100000
+            try:
+                y = found_link.location.get("y", 100000)
+            except:
+                pass
+
             label_text = text_or_empty(lab)
-            if label_text not in CONFIG["ad_labels"]:
-                continue
 
             items.append({
                 "y": y,
@@ -559,10 +575,13 @@ def parse_ads_positions(driver):
                 "url": href,
                 "domain": normalize_domain(href),
             })
-        except Exception:
+        except Exception as e:
+            # log(f"Ошибка при парсинге элемента: {e}") # Можно раскомментировать для отладки
             continue
 
+    # Сортируем по высоте (сверху вниз)
     items.sort(key=lambda x: x["y"])
+    
     out = []
     for i, it in enumerate(items, start=1):
         out.append({
@@ -572,6 +591,7 @@ def parse_ads_positions(driver):
             "url": it["url"],
             "domain": it["domain"],
         })
+    
     return out[:CONFIG["top_n"]]
 
 
@@ -739,15 +759,15 @@ def main_once():
 def scheduler_loop():
     """Бесконечный цикл планировщика."""
     log("=== YANDEX PARSER STARTED ===")
-    
+
     while True:
         now = datetime.now(MOSCOW_TZ)
         wait_sec = seconds_until_next_run(now)
         hours = wait_sec / 3600
-        
+
         log(f"[SCHEDULER] Ждём {hours:.2f} ч до следующего запуска")
         time.sleep(wait_sec)
-        
+
         log(f"[SCHEDULER] Запуск в {datetime.now(MOSCOW_TZ)}")
         try:
             main_once()
