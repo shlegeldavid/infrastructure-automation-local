@@ -31,17 +31,11 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
 
-# =========================
 # Логирование
-# =========================
-
 def log(msg):
     print(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}", flush=True)
 
-# =========================
 # Конфигурация
-# =========================
-
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN_YANDEX_PARSER_V2")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID_YANDEX_PARSER_V2")
 MOSCOW_TZ = ZoneInfo("Europe/Moscow")
@@ -59,15 +53,15 @@ CONFIG = {
     "gsheets_results_spreadsheet_id": "1EEXVYmlDFPiCn4hcDVdDon9PrQJbcPP7P-2y4i6PknA",
     "gsheets_results_sheet": "Results",
 
-    # === Excel (если queries_source == "excel") ===
+    # Excel (если queries_source == "excel")
     "excel_path": "queries.xlsx",
     "excel_sheet_name": "Sheet1",
     "excel_column": "B",
 
-    # === Папка на Google Drive для скринов ===
+    # Папка на Google Drive для скринов
     "gdrive_folder_id": "1VPtEC4JcuddvPJI5HUn3CmuypxdCuevv",
 
-    # === Selenium/режим ===
+    # Selenium/режим 
     "headless": False,                      # headful уменьшает шанс капчи
     "use_undetected_chromedriver": False,   # можно включить при необходимости
 
@@ -76,7 +70,7 @@ CONFIG = {
     "element_timeout_sec": 10,
     "post_load_sleep_sec": 1.0,
     "human_delay_sec": (1.5, 3.5),          # «человеческие» задержки
-    "per_query_pause_sec": (30, 60),        # пауза между запросами
+    "per_query_pause_sec": (35, 70),        # пауза между запросами
     "captcha_backoff_sec": [120, 300],      # бэкофф между ретраями (2 и 5 минут)
     "max_retries_per_query": 3,             # попыток на один запрос
 
@@ -94,7 +88,7 @@ CONFIG = {
 
     # Парсинг рекламных меток
     "ad_labels": ["Реклама", "Промо"],
-    "top_n": 10,
+    "top_n": 5,
 
     # Google Service Account (для Sheets)
     "google_sa_json_path": "service_account.json",
@@ -103,9 +97,7 @@ CONFIG = {
 }
 
 
-# =========================
 # Google auth helpers
-# =========================
 SHEETS_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
@@ -262,9 +254,7 @@ def write_run_timestamp():
     ts = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     ws.update_acell('A2', ts)
 
-# =========================
 # Selenium helpers
-# =========================
 def resolve_final_url_via_selenium(driver, href, timeout=10):
     """
     Пытаемся получить конечный URL, перейдя по ссылке в новой вкладке.
@@ -384,9 +374,7 @@ def normalize_domain(u):
     except Exception:
         return ""
 
-# =========================
 # UX helpers (cookie/поиск)
-# =========================
 def accept_cookies_if_any(driver):
     xpaths = [
         "//*[self::button or self::a][contains(.,'Понятно') or contains(.,'Согласен') or contains(.,'Принять')]",
@@ -451,9 +439,7 @@ def human_like_search_flow(driver, query):
     accept_cookies_if_any(driver)
     return "ok" if not is_yandex_captcha(driver) else "captcha"
 
-# =========================
 # CAPTCHA detect & manual wait
-# =========================
 def is_yandex_captcha(driver):
     html = (driver.page_source or "").lower()
     if ("smartcaptcha" in html or "я не робот" in html
@@ -498,109 +484,120 @@ def wait_user_to_solve_captcha(driver, query):
     log(f"[CAPTCHA] Таймаут для: {query}")
     return False
 
-# =========================
 # Core: parse Yandex SERP
-# =========================
 def parse_ads_positions(driver):
-    # 1. Более широкий поиск метки. Ищем не только span, но и div/b/small,
-    # и используем contains вместо жесткого равенства (на случай "Реклама ·")
-    labels_xpath = "//*[(self::span or self::div or self::b) and (contains(text(), 'Реклама') or contains(text(), 'Промо'))]"
-    label_nodes = driver.find_elements(By.XPATH, labels_xpath)
+    limit = int(CONFIG.get("top_n", 5))
 
-    items = []
-    seen_urls = set()
-
-    for lab in label_nodes:
+    def has_ad_marker(block) -> bool:
         try:
-            # Пропускаем, если текст слишком длинный (защита от ложных срабатываний в тексте статей)
-            if len(lab.text.strip()) > 15:
-                continue
+            for lbl in CONFIG.get("ad_labels", ["Реклама", "Промо"]):
+                nodes = block.find_elements(
+                    By.XPATH,
+                    f".//*[(self::span or self::div or self::b or self::small) "
+                    f"and contains(normalize-space(.), '{lbl}')]"
+                )
+                for n in nodes:
+                    t = (n.text or "").strip()
+                    if 0 < len(t) <= 20:
+                        return True
+        except Exception:
+            pass
 
-            # 2. Ищем ссылку не только в контейнере, а "рядом" с меткой.
-            # Часто ссылка находится прямо в родительском блоке или является соседом.
-            # Поднимаемся на 5 уровней вверх и ищем первую попавшуюся жирную ссылку.
-            
-            found_link = None
-            parent = lab
-            
-            # Поднимаемся вверх по DOM-дереву (максимум на 6 уровней), чтобы найти обертку
-            for _ in range(6):
-                try:
-                    parent = parent.find_element(By.XPATH, "..")
-                    # Ищем ссылку внутри текущего родителя, у которой есть href
-                    # Приоритет: ссылка с заголовком (h2/b) или просто ссылка с href
-                    links = parent.find_elements(By.XPATH, ".//a[@href]")
-                    
-                    # Фильтруем "технические" ссылки и ищем ту, что похожа на заголовок
-                    valid_links = [l for l in links if len(l.text.strip()) > 0 and not l.get_attribute("href").startswith("javascript")]
-                    
-                    if valid_links:
-                        # Берем первую, обычно она заголовочная в блоке рекламы
-                        found_link = valid_links[0]
-                        break
-                except Exception:
-                    break
-            
-            if not found_link:
-                continue
+        # иногда реклама помечается атрибутами/классами
+        try:
+            fast = (block.get_attribute("data-fast-name") or "").lower()
+            cls = (block.get_attribute("class") or "").lower()
+            if "adv" in fast or fast in ("ad", "ads"):
+                return True
+            if "serp-item" in cls and "adv" in cls:
+                return True
+        except Exception:
+            pass
 
-            href = found_link.get_attribute("href")
-            
-            # Дедупликация (иногда метка "Реклама" встречается дважды в одном блоке)
-            if href in seen_urls:
-                continue
-            seen_urls.add(href)
+        return False
 
-            title = text_or_empty(found_link)
-            # Если текст ссылки пустой, пробуем найти заголовок рядом
-            if not title and parent:
-                try:
-                    title = text_or_empty(parent.find_element(By.XPATH, ".//h2 | .//h3 | .//div[contains(@class, 'title')]"))
-                except:
-                    pass
-
-            # Координата Y для сортировки
-            y = 100000
+    def extract_best_link(block):
+        xps = [
+            ".//a[@href][.//h2 or .//h3]",
+            ".//a[@href][@role='link']",
+            ".//a[@href]",
+        ]
+        for xp in xps:
             try:
-                y = found_link.location.get("y", 100000)
-            except:
-                pass
+                links = block.find_elements(By.XPATH, xp)
+                for a in links:
+                    href = a.get_attribute("href")
+                    if not href:
+                        continue
+                    if href.startswith("javascript"):
+                        continue
+                    if len((a.text or "").strip()) == 0:
+                        continue
+                    return a
+            except Exception:
+                continue
+        return None
 
-            label_text = text_or_empty(lab)
+    blocks = driver.find_elements(
+        By.XPATH,
+        "//li[contains(@class,'serp-item')] | //div[contains(@class,'serp-item')]"
+    )
 
-            items.append({
-                "y": y,
-                "label": label_text,
-                "title": title,
-                "url": href,
-                "domain": normalize_domain(href),
-            })
-        except Exception as e:
-            # log(f"Ошибка при парсинге элемента: {e}") # Можно раскомментировать для отладки
+    out = []
+    seen = set()
+    pos = 0  # позиция в выдаче среди результатов (1..limit)
+
+    for block in blocks:
+        if pos >= limit:
+            break
+
+        try:
+            if not block.is_displayed():
+                continue
+        except Exception:
+            pass
+
+        link = extract_best_link(block)
+        if not link:
             continue
 
-    # Сортируем по высоте (сверху вниз)
-    items.sort(key=lambda x: x["y"])
-    
-    out = []
-    for i, it in enumerate(items, start=1):
+        href = link.get_attribute("href")
+        if not href:
+            continue
+
+        # это считается "результатом", значит увеличиваем позицию
+        pos += 1
+
+        # если не реклама — просто пропускаем, но позиция уже учтена
+        if not has_ad_marker(block):
+            continue
+
+        # если реклама — добавляем 
+        if href in seen:
+            continue
+        seen.add(href)
+
+        title = text_or_empty(link)
+        if not title:
+            try:
+                title = text_or_empty(block.find_element(By.XPATH, ".//h2 | .//h3"))
+            except Exception:
+                title = ""
+
         out.append({
-            "position": i,
-            "label": it["label"],
-            "title": it["title"],
-            "url": it["url"],
-            "domain": it["domain"],
+            "position": pos,
+            "label": "AD",
+            "title": title,
+            "url": href,
+            "domain": normalize_domain(href),
         })
-    
-    return out[:CONFIG["top_n"]]
 
+    return out
 
-# =========================
 # Main per-query with manual-captcha + retries
-# =========================
 def run_for_query(query, ws_results):
     log(f"[QUERY] Начинаю: {query}")
-    
+
     retries = CONFIG.get("max_retries_per_query", 3)
     backoffs = CONFIG.get("captcha_backoff_sec", [120, 300])
     ua_list = CONFIG.get("rotate_user_agents", [])
