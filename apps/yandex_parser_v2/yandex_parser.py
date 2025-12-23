@@ -45,7 +45,7 @@ DRIVE_OAUTH_SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 CONFIG = {
     # Источник запросов
     "queries_source": "gsheets",
-    "resolve_final_url": True,
+    "resolve_final_url": False,  # резолвить ли конечный URL переходом
 
     # Откуда читать запросы (первый лист, колонка B начиная с B2)
     "gsheets_queries_spreadsheet_id": "1JcUKxyTib-LPYgA-XFZd-HlCbhzlc4KzguVpGFGKRs4",
@@ -96,6 +96,46 @@ CONFIG = {
     "screenshot_dir": "/app/data/screenshots"
 }
 
+DOMAIN_RE = re.compile(r'(?i)\b([a-z0-9-]+\.)+[a-z]{2,}\b')
+
+def extract_display_domain(block):
+    """
+    Достаёт видимый домен из результата Яндекса (например: mts.ru).
+    Работает без клика, по тексту внутри блока результата.
+    """
+    # 1) Пытаемся вытащить из "строки адреса/пути" (обычно там 'mts.ru › ...')
+    xps = [
+        ".//*[contains(@class,'Path') or contains(@class,'path')]",
+        ".//*[contains(@class,'Organic-Path') or contains(@class,'organic__path')]",
+        ".//*[contains(@class,'Link') and contains(@class,'Path')]",
+    ]
+    for xp in xps:
+        try:
+            for el in block.find_elements(By.XPATH, xp):
+                txt = (el.text or "").strip()
+                if not txt:
+                    continue
+                txt = txt.replace("›", " ").replace("·", " ")
+                m = DOMAIN_RE.search(txt)
+                if m:
+                    return m.group(0).lower()
+        except Exception:
+            pass
+
+    # 2) Fallback: берём только верхние строки блока (чтобы не ловить мусор)
+    try:
+        txt = (block.text or "").strip()
+        if not txt:
+            return None
+        head = "\n".join(txt.splitlines()[:6])  # первые строки сниппета
+        head = head.replace("›", " ").replace("·", " ")
+        m = DOMAIN_RE.search(head)
+        if m:
+            return m.group(0).lower()
+    except Exception:
+        pass
+
+    return None
 
 # Google auth helpers
 SHEETS_SCOPES = [
@@ -486,6 +526,11 @@ def wait_user_to_solve_captcha(driver, query):
 
 # Core: parse Yandex SERP
 def parse_ads_positions(driver):
+    """
+    Просматривает первые CONFIG["top_n"] позиций выдачи (например, 5).
+    Возвращает только те из них, где есть метка Промо/Реклама.
+    domain берётся из сниппета на главной странице (без переходов).
+    """
     limit = int(CONFIG.get("top_n", 5))
 
     def has_ad_marker(block) -> bool:
@@ -502,18 +547,6 @@ def parse_ads_positions(driver):
                         return True
         except Exception:
             pass
-
-        # иногда реклама помечается атрибутами/классами
-        try:
-            fast = (block.get_attribute("data-fast-name") or "").lower()
-            cls = (block.get_attribute("class") or "").lower()
-            if "adv" in fast or fast in ("ad", "ads"):
-                return True
-            if "serp-item" in cls and "adv" in cls:
-                return True
-        except Exception:
-            pass
-
         return False
 
     def extract_best_link(block):
@@ -544,8 +577,7 @@ def parse_ads_positions(driver):
     )
 
     out = []
-    seen = set()
-    pos = 0  # позиция в выдаче среди результатов (1..limit)
+    pos = 0  # позиция в выдаче (1..limit)
 
     for block in blocks:
         if pos >= limit:
@@ -565,17 +597,12 @@ def parse_ads_positions(driver):
         if not href:
             continue
 
-        # это считается "результатом", значит увеличиваем позицию
+        # засчитываем позицию результата
         pos += 1
 
-        # если не реклама — просто пропускаем, но позиция уже учтена
+        # не промо — пропускаем
         if not has_ad_marker(block):
             continue
-
-        # если реклама — добавляем 
-        if href in seen:
-            continue
-        seen.add(href)
 
         title = text_or_empty(link)
         if not title:
@@ -584,12 +611,14 @@ def parse_ads_positions(driver):
             except Exception:
                 title = ""
 
+        dom = extract_display_domain(block) or "UNRESOLVED"
+
         out.append({
-            "position": pos,
+            "position": pos,      # позиция среди ТОП-5 выдачи
             "label": "AD",
             "title": title,
-            "url": href,
-            "domain": normalize_domain(href),
+            "url": href,          # можно оставить yabs-ссылку, это уже не влияет на domain
+            "domain": dom,        # mts.ru и т.п. с главной страницы
         })
 
     return out
